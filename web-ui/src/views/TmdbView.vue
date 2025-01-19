@@ -43,6 +43,7 @@
       </el-table-column>
       <el-table-column prop="year" label="年份" width="65"/>
       <el-table-column prop="score" label="评分" width="60"/>
+<!--      <el-table-column prop="time" label="更新时间" width="100"/>-->
       <el-table-column fixed="right" label="操作" width="200">
         <template #default="scope">
           <el-button type="primary" size="small" @click="editMeta(scope.row)">编辑</el-button>
@@ -112,6 +113,9 @@
         <el-form-item label="路径" required>
           <el-input v-model="form.path" autocomplete="off"/>
         </el-form-item>
+        <el-form-item label="搜索">
+          <a href="https://www.themoviedb.org/search?query=" target="_blank">https://www.themoviedb.org/search?query=</a>
+        </el-form-item>
         <el-form-item label="TMDB ID" required>
           <el-input-number v-model="form.tmId" min="0" autocomplete="off"/>
         </el-form-item>
@@ -175,7 +179,7 @@ import type {Site} from "@/model/Site";
 import type {Meta} from "@/model/Meta";
 
 const sizes = [20, 40, 60, 80, 100]
-const url = ref('http://' + window.location.hostname + ':5344')
+const url = ref(window.location.protocol + '//' + window.location.hostname + ':' + (store.hostmode ? 5678 : 5344))
 const keyword = ref('')
 const indexName = ref('custom_index')
 const force = ref(false)
@@ -377,13 +381,13 @@ const loadBaseUrl = () => {
     url.value = data.url
     const re = /http:\/\/localhost:(\d+)/.exec(data.url)
     if (re) {
-      url.value = 'http://' + window.location.hostname + ':' + re[1]
+      url.value = window.location.protocol + '//' + window.location.hostname + ':' + re[1]
       store.baseUrl = url.value
       console.log('load AList ' + url.value)
     } else if (data.url == 'http://localhost') {
       axios.get('/api/alist/port').then(({data}) => {
         if (data) {
-          url.value = 'http://' + window.location.hostname + ':' + data
+          url.value = window.location.protocol + '//' + window.location.hostname + ':' + data
           store.baseUrl = url.value
           console.log('load AList ' + url.value)
         }

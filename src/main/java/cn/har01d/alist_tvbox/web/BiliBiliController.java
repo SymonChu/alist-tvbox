@@ -5,7 +5,6 @@ import cn.har01d.alist_tvbox.dto.bili.CookieData;
 import cn.har01d.alist_tvbox.dto.bili.QrCode;
 import cn.har01d.alist_tvbox.service.BiliBiliService;
 import cn.har01d.alist_tvbox.service.SubscriptionService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -17,7 +16,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
-import java.net.URLDecoder;
 import java.util.Map;
 
 @Slf4j
@@ -25,16 +23,19 @@ import java.util.Map;
 public class BiliBiliController {
     private final BiliBiliService biliBiliService;
     private final SubscriptionService subscriptionService;
-    private final ObjectMapper objectMapper;
 
-    public BiliBiliController(BiliBiliService biliBiliService, SubscriptionService subscriptionService, ObjectMapper objectMapper) {
+    public BiliBiliController(BiliBiliService biliBiliService, SubscriptionService subscriptionService) {
         this.biliBiliService = biliBiliService;
         this.subscriptionService = subscriptionService;
-        this.objectMapper = objectMapper;
+    }
+
+    @GetMapping("/bili/cookie/{id}")
+    public String getBiliBiliCookie(@PathVariable String id) {
+        return biliBiliService.getBiliBiliCookie(id);
     }
 
     @GetMapping("/bilibili")
-    public String api(String t, String ids, String wd,
+    public Object api(String t, String ids, String wd,
                       boolean quick,
                       FilterDto filter,
                       @RequestParam(required = false, defaultValue = "1") Integer pg,
@@ -44,7 +45,7 @@ public class BiliBiliController {
     }
 
     @GetMapping("/bilibili/{token}")
-    public String api(@PathVariable String token, String t, String ids, String wd,
+    public Object api(@PathVariable String token, String t, String ids, String wd,
                       boolean quick,
                       FilterDto filter,
                       @RequestParam(required = false, defaultValue = "1") Integer pg,
@@ -53,7 +54,6 @@ public class BiliBiliController {
         subscriptionService.checkToken(token);
         response.setContentType("application/json");
 
-        log.debug("{} {} {}", request.getMethod(), request.getRequestURI(), decodeUrl(request.getQueryString()));
         log.info("path: {}  folder: {}  keyword: {}  filter: {}  quick: {} page: {}", ids, t, wd, filter, quick, pg);
         Object result;
         if (ids != null && !ids.isEmpty()) {
@@ -69,7 +69,7 @@ public class BiliBiliController {
         } else {
             result = biliBiliService.getCategoryList();
         }
-        return objectMapper.writeValueAsString(result);
+        return result;
     }
 
     @GetMapping("/api/bilibili/status")
@@ -95,17 +95,5 @@ public class BiliBiliController {
     @PostMapping("/api/bilibili/login")
     public QrCode scanLogin() throws IOException {
         return biliBiliService.scanLogin();
-    }
-
-    private String decodeUrl(String text) {
-        if (text == null || text.isEmpty()) {
-            return "";
-        }
-
-        try {
-            return URLDecoder.decode(text, "UTF-8");
-        } catch (Exception e) {
-            return text;
-        }
     }
 }

@@ -1,14 +1,18 @@
 BASE_DIR=/etc/xiaoya
 TAG="hostmode"
+UPDATE=false
 MOUNT=""
 
-while getopts "d:t:v:" arg; do
+while getopts "d:t:v:u" arg; do
     case "${arg}" in
         d)
             BASE_DIR=${OPTARG}
             ;;
         t)
             TAG=${OPTARG}
+            ;;
+        u)
+            UPDATE=true
             ;;
         v)
             MOUNT="${MOUNT} -v ${OPTARG}"
@@ -36,7 +40,9 @@ then
 	echo -e "127.0.0.1\taccess.mypikpak.com" >> /etc/hosts
 fi
 
-docker image prune -f
+docker container prune -f --filter "label=MAINTAINER=Har01d"
+docker image prune -f --filter "label=MAINTAINER=Har01d"
+docker volume prune -f --filter "label=MAINTAINER=Har01d"
 
 platform="linux/amd64"
 ARCH=$(uname -m)
@@ -47,15 +53,22 @@ elif [ "$ARCH" = "aarch64" ]; then
     platform="linux/arm64"
 fi
 
+IMAGE_ID=$(docker images -q haroldli/xiaoya-tvbox:${TAG})
 echo -e "\e[32m下载最新Docker镜像，平台：${platform}\e[0m"
 for i in 1 2 3 4 5
 do
    docker pull --platform ${platform} haroldli/xiaoya-tvbox:${TAG} && break
 done
 
+NEW_IMAGE=$(docker images -q haroldli/xiaoya-tvbox:${TAG})
+if [ "$UPDATE" = "true" ] && [ "$IMAGE_ID" = "$NEW_IMAGE" ]; then
+  echo -e "\e[33m镜像没有更新\e[0m"
+  exit
+fi
+
 echo -e "\e[33m重启应用，host网络模式\e[0m"
 docker rm -f xiaoya-tvbox 2>/dev/null && \
-docker run -d --network host -e INSTALL=hostmode -v "$BASE_DIR":/data ${MOUNT} --restart=always --name=xiaoya-tvbox haroldli/xiaoya-tvbox:${TAG}
+docker run -d --network host -v "$BASE_DIR":/data ${MOUNT} --restart=always --name=xiaoya-tvbox haroldli/xiaoya-tvbox:${TAG}
 
 echo -e "\n\e[32m请使用以下命令查看日志输出：\e[0m"
 echo -e "    docker logs -f xiaoya-tvbox\n"
@@ -70,5 +83,3 @@ else
   echo -e "\e[32m云服务器请用公网IP访问\e[0m"
 fi
 echo ""
-
-echo -e "\e[33m默认端口变更为4567\e[0m"

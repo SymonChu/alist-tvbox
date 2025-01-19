@@ -3,6 +3,7 @@ PORT1=4567
 PORT2=5344
 PORT3=5345
 TAG="native"
+UPDATE=false
 MEM_OPT="-Xmx512M"
 MOUNT=""
 
@@ -12,12 +13,13 @@ usage(){
   echo "-p PORT1       管理界面端口，默认：4567"
   echo "-P PORT2       小雅AList端口，默认：5344"
   echo "-t TAG         Docker镜像标签，默认：native"
+  echo "-u             检查镜像更新"
   echo "-v Host:Docker 路径挂载"
   echo "-m MEM_OPT     Java最大堆内存，默认：512M"
   exit 2
 }
 
-while getopts "d:p:P:e:m:t:v:h" arg; do
+while getopts "d:p:P:e:m:t:v:hu" arg; do
     case "${arg}" in
         d)
             BASE_DIR=${OPTARG}
@@ -36,6 +38,9 @@ while getopts "d:p:P:e:m:t:v:h" arg; do
             ;;
         t)
             TAG=${OPTARG}
+            ;;
+        u)
+            UPDATE=true
             ;;
         v)
             MOUNT="${MOUNT} -v ${OPTARG}"
@@ -77,7 +82,9 @@ then
 	echo -e "127.0.0.1\taccess.mypikpak.com" >> /etc/hosts
 fi
 
-docker image prune -f
+docker container prune -f --filter "label=MAINTAINER=Har01d"
+docker image prune -f --filter "label=MAINTAINER=Har01d"
+docker volume prune -f --filter "label=MAINTAINER=Har01d"
 
 platform="linux/amd64"
 ARCH=$(uname -m)
@@ -88,15 +95,22 @@ elif [ "$ARCH" = "aarch64" ]; then
     platform="linux/arm64"
 fi
 
+IMAGE_ID=$(docker images -q haroldli/xiaoya-tvbox:${TAG})
 echo -e "\e[32m下载最新Docker镜像，平台：${platform}, image tag: ${TAG}\e[0m"
 for i in 1 2 3 4 5
 do
    docker pull --platform ${platform} haroldli/xiaoya-tvbox:${TAG} && break
 done
 
+NEW_IMAGE=$(docker images -q haroldli/xiaoya-tvbox:${TAG})
+if [ "$UPDATE" = "true" ] && [ "$IMAGE_ID" = "$NEW_IMAGE" ]; then
+  echo -e "\e[33m镜像没有更新\e[0m"
+  exit
+fi
+
 echo -e "\e[33m重启应用\e[0m"
 docker rm -f xiaoya-tvbox 2>/dev/null && \
-docker run -d -p $PORT1:4567 -p $PORT2:80 -e ALIST_PORT=$PORT2 -e INSTALL=native -e MEM_OPT="$MEM_OPT" -v "$BASE_DIR":/data ${MOUNT} --restart=always --name=xiaoya-tvbox haroldli/xiaoya-tvbox:${TAG}
+docker run -d -p $PORT1:4567 -p $PORT2:80 -e ALIST_PORT=$PORT2 -e MEM_OPT="$MEM_OPT" -v "$BASE_DIR":/data ${MOUNT} --restart=always --name=xiaoya-tvbox haroldli/xiaoya-tvbox:${TAG}
 
 echo -e "\n\e[32m请使用以下命令查看日志输出：\e[0m"
 echo -e "    docker logs -f xiaoya-tvbox\n"
@@ -118,5 +132,3 @@ else
   echo -e "\e[32m云服务器请用公网IP访问\e[0m"
 fi
 echo ""
-
-echo -e "\e[33m默认端口变更为4567\e[0m"

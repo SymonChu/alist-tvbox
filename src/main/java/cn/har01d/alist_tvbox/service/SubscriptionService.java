@@ -1,11 +1,17 @@
 package cn.har01d.alist_tvbox.service;
 
 import cn.har01d.alist_tvbox.config.AppProperties;
+import cn.har01d.alist_tvbox.domain.DriverType;
 import cn.har01d.alist_tvbox.dto.TokenDto;
 import cn.har01d.alist_tvbox.entity.Account;
 import cn.har01d.alist_tvbox.entity.AccountRepository;
+import cn.har01d.alist_tvbox.entity.EmbyRepository;
+import cn.har01d.alist_tvbox.entity.JellyfinRepository;
+import cn.har01d.alist_tvbox.entity.PanAccount;
+import cn.har01d.alist_tvbox.entity.PanAccountRepository;
 import cn.har01d.alist_tvbox.entity.Setting;
 import cn.har01d.alist_tvbox.entity.SettingRepository;
+import cn.har01d.alist_tvbox.entity.ShareRepository;
 import cn.har01d.alist_tvbox.entity.Site;
 import cn.har01d.alist_tvbox.entity.SiteRepository;
 import cn.har01d.alist_tvbox.entity.Subscription;
@@ -55,6 +61,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static cn.har01d.alist_tvbox.util.Constants.ALI_SECRET;
+import static cn.har01d.alist_tvbox.util.Constants.BILIBILI_COOKIE;
 import static cn.har01d.alist_tvbox.util.Constants.TOKEN;
 
 @Slf4j
@@ -70,7 +77,12 @@ public class SubscriptionService {
     private final SubscriptionRepository subscriptionRepository;
     private final AccountRepository accountRepository;
     private final SiteRepository siteRepository;
+    private final ShareRepository shareRepository;
+    private final PanAccountRepository panAccountRepository;
+    private final EmbyRepository embyRepository;
+    private final JellyfinRepository jellyfinRepository;
     private final AListLocalService aListLocalService;
+    private final ConfigFileService configFileService;
 
     private String tokens = "";
 
@@ -83,7 +95,12 @@ public class SubscriptionService {
                                SubscriptionRepository subscriptionRepository,
                                AccountRepository accountRepository,
                                SiteRepository siteRepository,
-                               AListLocalService aListLocalService) {
+                               ShareRepository shareRepository,
+                               PanAccountRepository panAccountRepository,
+                               EmbyRepository embyRepository,
+                               JellyfinRepository jellyfinRepository,
+                               AListLocalService aListLocalService,
+                               ConfigFileService configFileService) {
         this.environment = environment;
         this.appProperties = appProperties;
         this.restTemplate = builder
@@ -96,7 +113,12 @@ public class SubscriptionService {
         this.subscriptionRepository = subscriptionRepository;
         this.accountRepository = accountRepository;
         this.siteRepository = siteRepository;
+        this.shareRepository = shareRepository;
+        this.panAccountRepository = panAccountRepository;
+        this.embyRepository = embyRepository;
+        this.jellyfinRepository = jellyfinRepository;
         this.aListLocalService = aListLocalService;
+        this.configFileService = configFileService;
     }
 
     @PostConstruct
@@ -114,7 +136,7 @@ public class SubscriptionService {
             sub = new Subscription();
             sub.setSid("1");
             sub.setName("饭太硬");
-            sub.setUrl("http://饭太硬.top/tv");
+            sub.setUrl("http://www.饭太硬.com/tv");
             subscriptionRepository.save(sub);
             sub = new Subscription();
             sub.setSid("2");
@@ -128,12 +150,36 @@ public class SubscriptionService {
             fixSid(list);
             fixId(list);
         }
+        if (subscriptionRepository.findBySid("pg").isEmpty()) {
+            Subscription sub = new Subscription();
+            sub.setSid("pg");
+            sub.setName("PG");
+            sub.setUrl("/pg/jsm.json");
+            subscriptionRepository.save(sub);
+        }
+        if (subscriptionRepository.findBySid("ok").isEmpty()) {
+            Subscription sub = new Subscription();
+            sub.setSid("ok");
+            sub.setName("OK");
+            sub.setUrl("http://ok321.top/ok");
+            subscriptionRepository.save(sub);
+        }
+        if (subscriptionRepository.findBySid("zx").isEmpty()) {
+            Subscription sub = new Subscription();
+            sub.setSid("zx");
+            sub.setName("真心");
+            sub.setUrl("/zx/FongMi.json");
+            subscriptionRepository.save(sub);
+        }
     }
 
     private void fixUrl(List<Subscription> list) {
         for (Subscription sub : list) {
             if ("https://tvbox.cainisi.cf".equals(sub.getUrl())) {
                 sub.setUrl("https://tv.菜妮丝.top");
+                subscriptionRepository.save(sub);
+            } else if ("http://饭太硬.com/tv".equals(sub.getUrl())) {
+                sub.setUrl("http://www.饭太硬.com/tv");
                 subscriptionRepository.save(sub);
             }
         }
@@ -182,6 +228,10 @@ public class SubscriptionService {
     }
 
     public void checkToken(String rawToken) {
+        if (tokens.isBlank()) {
+            return;
+        }
+
         for (String t : tokens.split(",")) {
             if (t.equals(rawToken)) {
                 return;
@@ -191,7 +241,7 @@ public class SubscriptionService {
         throw new BadRequestException();
     }
 
-    public String getToken() {
+    public String getTokens() {
         return tokens;
     }
 
@@ -219,6 +269,57 @@ public class SubscriptionService {
 
     public List<Subscription> findAll() {
         return subscriptionRepository.findAll();
+    }
+
+    public String node(String file) throws IOException {
+        log.debug("load file {}", file);
+        if (file.contains("index.config.js")) {
+            Path config = Path.of("/www/cat/index.config.js");
+            String json = Files.readString(config);
+            String secret = tokens.isEmpty() ? "" : ("/" + tokens.split(",")[0]);
+            json = json.replace("VOD_URL", readHostAddress("/vod" + secret));
+            json = json.replace("VOD1_URL", readHostAddress("/vod1" + secret));
+            json = json.replace("BILIBILI_URL", readHostAddress("/bilibili" + secret));
+            json = json.replace("YOUTUBE_URL", readHostAddress("/youtube" + secret));
+            json = json.replace("EMBY_URL", readHostAddress("/emby" + secret));
+            String ali = accountRepository.getFirstByMasterTrue().map(Account::getRefreshToken).orElse("");
+            json = json.replace("ALI_TOKEN", ali);
+            ali = accountRepository.getFirstByMasterTrue().map(Account::getOpenToken).orElse("");
+            json = json.replace("ALI_OPEN_TOKEN", ali);
+
+            String quarkCookie = panAccountRepository.findByTypeAndMasterTrue(DriverType.QUARK).map(PanAccount::getCookie).orElse("");
+            json = json.replace("QUARK_COOKIE", quarkCookie);
+
+            String address = readHostAddress();
+            json = json.replace("DOCKER_ADDRESS", address);
+            json = json.replace("ATV_ADDRESS", address);
+
+            if ("index.config.js".equals(file)) {
+                return json;
+            } else if ("index.config.js.md5".equals(file)) {
+                return Utils.md5(json);
+            }
+        }
+        return Files.readString(Path.of("/www/cat", file));
+    }
+
+    public int syncCat() {
+        Utils.execute("rm -rf /www/cat/* && unzip -q -o /cat.zip -d /www/cat && [ -d /data/cat ] && cp -r /data/cat/* /www/cat/");
+        Utils.execute("/downloadZx.sh");
+        Utils.execute("/downloadPg.sh");
+
+        var files = configFileService.list();
+        for (var file : files) {
+            if (file.getPath().startsWith("/www/")) {
+                try {
+                    configFileService.writeFileContent(file);
+                } catch (IOException e) {
+                    log.warn("Write file failed.", e);
+                }
+            }
+        }
+
+        return 0;
     }
 
     public Map<String, Object> open() throws IOException {
@@ -250,6 +351,14 @@ public class SubscriptionService {
     private void addCatSites(Map<String, Object> config) {
         List<Map<String, Object>> sites = getSites(config, "video");
         Map<String, Object> site = new HashMap<>();
+        site.put("key", "youtube");
+        site.put("name", "🟢 YouTube");
+        site.put("type", 3);
+        site.put("api", "/cat/youtube.js");
+        site.put("ext", "YOUTUBE_EXT");
+        sites.add(0, site);
+
+        site = new HashMap<>();
         site.put("key", "bilibili");
         site.put("name", "🟢 BiliBili");
         site.put("type", 3);
@@ -298,6 +407,7 @@ public class SubscriptionService {
         json = json.replace("VOD_EXT", readHostAddress("/vod" + secret));
         json = json.replace("VOD1_EXT", readHostAddress("/vod1" + secret));
         json = json.replace("BILIBILI_EXT", readHostAddress("/bilibili" + secret));
+        json = json.replace("YOUTUBE_EXT", readHostAddress("/youtube" + secret));
         json = json.replace("ALIST_URL", readAListAddress());
         String ali = accountRepository.getFirstByMasterTrue().map(Account::getRefreshToken).orElse("");
         json = json.replace("ALI_TOKEN", ali);
@@ -305,6 +415,9 @@ public class SubscriptionService {
         json = json.replace("阿里token", ali);
         String token = siteRepository.findById(1).map(Site::getToken).orElse("");
         json = json.replace("ALIST_TOKEN", token);
+        String address = readHostAddress();
+        json = json.replace("DOCKER_ADDRESS", address);
+        json = json.replace("ATV_ADDRESS", address);
         return json;
     }
 
@@ -405,20 +518,42 @@ public class SubscriptionService {
 
     private void replaceAliToken(Map<String, Object> config) {
         List<Map<String, Object>> list = (List<Map<String, Object>>) config.get("sites");
-        String path = "/ali/token/" + settingRepository.findById(ALI_SECRET).map(Setting::getValue).orElseThrow();
-        String tokenUrl = readHostAddress(path);
+        String secret = settingRepository.findById(ALI_SECRET).map(Setting::getValue).orElseThrow();
+        String tokenUrl = shareRepository.countByType(0) > 0 ? readHostAddress("/ali/token/" + secret) : null;
+        String cookieUrl = panAccountRepository.findByTypeAndMasterTrue(DriverType.QUARK).isPresent() ? readHostAddress("/quark/cookie/" + secret) : null;
         for (Map<String, Object> site : list) {
             Object obj = site.get("ext");
+            String api = (String) site.get("api");
             if (obj instanceof String) {
                 String ext = (String) obj;
-                String text = ext.replace("http://127.0.0.1:9978/file/tvfan/token.txt", tokenUrl)
-                        .replace("http://127.0.0.1:9978/file/tvfan/tokengo.txt", tokenUrl)
-                        .replace("http://127.0.0.1:9978/file/tvbox/token.txt", tokenUrl)
-                        .replace("http://127.0.0.1:9978/file/cainisi/token.txt", tokenUrl)
-                        .replace("http://127.0.0.1:9978/file/fatcat/token.txt", tokenUrl);
+                String text = ext;
+                if (tokenUrl != null) {
+                    text = text.replace("http://127.0.0.1:9978/file/tvfan/token.txt", tokenUrl)
+                            .replace("http://127.0.0.1:9978/file/tvfan/tokengo.txt", tokenUrl)
+                            .replace("http://127.0.0.1:9978/file/tvbox/token.txt", tokenUrl)
+                            .replace("http://127.0.0.1:9978/file/cainisi/token.txt", tokenUrl)
+                            .replace("http://127.0.0.1:9978/file/fatcat/token.txt", tokenUrl);
+                }
                 if (!ext.equals(text)) {
                     log.info("replace token url in ext: {}", ext);
                     site.put("ext", text);
+                }
+            } else if (obj instanceof Map) {
+                Map map = (Map) obj;
+                if (tokenUrl != null && "file://TV/ali_token.txt".equals(map.get("token"))) {
+                    map.put("token", tokenUrl);
+                }
+                if (cookieUrl != null && "file://TV/quark_cookie.txt".equals(map.get("cookie"))) {
+                    map.put("cookie", cookieUrl);
+                }
+                if (tokenUrl != null && map.containsKey("aliToken")) {
+                    map.put("aliToken", tokenUrl); // tvfan/token.txt
+                }
+                if (cookieUrl != null && map.containsKey("quarkCookie")) {
+                    map.put("quarkCookie", cookieUrl); // tvfan/cookie.txt
+                }
+                if ("csp_Bili".equals(api) && map.containsKey("cookie")) {
+                    map.put("cookie", settingRepository.findById(BILIBILI_COOKIE).map(Setting::getValue).orElse(""));
                 }
             }
         }
@@ -451,7 +586,25 @@ public class SubscriptionService {
             json = json.replace("./", url);
         }
 
-        return convertResult(json, configKey);
+        Map<String, Object> config = convertResult(json, configKey);
+        if (configUrl == null || configUrl.isEmpty()) {
+            return handleIptv(config);
+        }
+        return config;
+    }
+
+    private Map<String, Object> handleIptv(Map<String, Object> config) {
+        if (Files.exists(Path.of("/www/tvbox/iptv.m3u"))) {
+            return config;
+        }
+
+        Object obj = config.get("lives");
+        if (obj instanceof List) {
+            List<Map<String, Object>> list = (List<Map<String, Object>>) obj;
+            list = list.stream().filter(e -> !"我的私用".equals(e.get("name"))).collect(Collectors.toList());
+            config.put("lives", list);
+        }
+        return config;
     }
 
     private void handleWhitelist(Map<String, Object> config) {
@@ -489,6 +642,44 @@ public class SubscriptionService {
         } catch (Exception e) {
             log.warn("", e);
         }
+
+        try {
+            Object obj = config.get("blacklist");
+            if (obj instanceof Map) {
+                Map<String, Object> blacklist = (Map<String, Object>) obj;
+                removeBlacklist(config, blacklist, "sites");
+                removeBlacklist(config, blacklist, "lives");
+                removeBlacklist(config, blacklist, "rules");
+                removeBlacklist(config, blacklist, "parses");
+            }
+            config.remove("blacklist");
+        } catch (Exception e) {
+            log.warn("", e);
+        }
+    }
+
+    private void removeBlacklist(Map<String, Object> config, Map<String, Object> blacklist, String type) {
+        Object obj1 = blacklist.get(type);
+        if (obj1 == null) {
+            obj1 = new ArrayList<String>(); // to remove Alist1 site
+        }
+        Object obj2 = config.get(type);
+        if (obj1 instanceof List && obj2 instanceof List) {
+            Set<String> set = new HashSet<>((List<String>) obj1);
+            if (!set.isEmpty()) {
+                String key;
+                if ("sites".equals(type)) {
+                    key = "key";
+                    set.add("Alist1");
+                } else {
+                    key = "name";
+                }
+                List<Map<String, Object>> list = (List<Map<String, Object>>) obj2;
+                list = list.stream().filter(e -> !set.contains(e.get(key))).collect(Collectors.toList());
+                config.put(type, list);
+                log.info("remove {}: {}", type, set);
+            }
+        }
     }
 
     private Map<String, Object> overrideConfig(Map<String, Object> config, String json) {
@@ -498,6 +689,8 @@ public class SubscriptionService {
             String address = readHostAddress();
             json = json.replace("DOCKER_ADDRESS", address);
             json = json.replace("ATV_ADDRESS", address);
+            json = json.replace("BILI_COOKIE", settingRepository.findById(BILIBILI_COOKIE).map(Setting::getValue).orElse(""));
+            json = json.replace("TOKEN", tokens.split(",")[0]);
             Map<String, Object> override = objectMapper.readValue(json, Map.class);
             overrideConfig(config, "", "", override);
             return replaceString(config, override);
@@ -518,6 +711,10 @@ public class SubscriptionService {
                     if (entry.getKey() instanceof String && entry.getValue() instanceof String) {
                         String key = (String) entry.getKey();
                         String value = (String) entry.getValue();
+                        String address = readHostAddress();
+                        value = value.replace("DOCKER_ADDRESS", address);
+                        value = value.replace("ATV_ADDRESS", address);
+                        value = value.replace("TOKEN", tokens.split(",")[0]);
                         log.info("replace text '{}' by '{}'", key, value);
                         configJson = configJson.replace(key, value);
                     }
@@ -554,6 +751,7 @@ public class SubscriptionService {
                             }
                         }
                     }
+                    log.debug("overrideConfig: {} {}", key, value);
                     overrideList(config, override, prefix, spider, key, keyName);
                 } else {
                     config.put(key, value);
@@ -684,6 +882,15 @@ public class SubscriptionService {
                 }
 
                 if (original != null) {
+                    Object ext1 = original.get("ext");
+                    if (ext1 instanceof Map extMap1) {
+                        Object ext2 = site.get("ext");
+                        if (ext2 instanceof Map extMap2) {
+                            extMap1.putAll(extMap2);
+                            site.put("ext", extMap1);
+                        }
+                    }
+
                     original.putAll(site);
                     log.debug("override {}: {}", name, key);
                 } else {
@@ -732,8 +939,47 @@ public class SubscriptionService {
 
         try {
             Map<String, Object> site = buildSite(token, "csp_BiliBili", "BiliBili");
-            sites.add(id, site);
+            sites.add(id++, site);
             log.debug("add BiliBili site: {}", site);
+        } catch (Exception e) {
+            log.warn("", e);
+        }
+
+        try {
+            Map<String, Object> site = buildSite(token, "csp_Youtube", "YouTube");
+            sites.add(id++, site);
+            log.debug("add Youtube site: {}", site);
+        } catch (Exception e) {
+            log.warn("", e);
+        }
+
+        try {
+            if (embyRepository.count() > 0) {
+                Map<String, Object> site = buildSite(token, "csp_Emby", "Emby");
+                sites.add(id++, site);
+                log.debug("add Emby site: {}", site);
+            }
+        } catch (Exception e) {
+            log.warn("", e);
+        }
+
+        try {
+            if (jellyfinRepository.count() > 0) {
+                Map<String, Object> site = buildSite(token, "csp_Jellyfin", "Jellyfin");
+                sites.add(id++, site);
+                log.debug("add Jellyfin site: {}", site);
+            }
+        } catch (Exception e) {
+            log.warn("", e);
+        }
+
+        try {
+            boolean enabled = settingRepository.findById("enable_live").map(Setting::getValue).orElse("").equals("true");
+            if (enabled) {
+                Map<String, Object> site = buildSite(token, "csp_Live", "网络直播");
+                sites.add(id++, site);
+                log.debug("add Live site: {}", site);
+            }
         } catch (Exception e) {
             log.warn("", e);
         }
@@ -758,12 +1004,15 @@ public class SubscriptionService {
         site.put("searchable", 1);
         site.put("quickSearch", 1);
         site.put("filterable", 1);
-        Map<String, Object> style = new HashMap<>();
-        style.put("type", "rect");
-        if ("csp_BiliBili".equals(key)) {
+        if ("csp_BiliBili".equals(key) || "csp_Youtube".equals(key)) {
+            Map<String, Object> style = new HashMap<>();
+            style.put("type", "rect");
             style.put("ratio", 1.597);
+            site.put("style", style);
         }
-        site.put("style", style);
+        if ("csp_Youtube".equals(key)) {
+            site.put("playerType", 2);
+        }
         return site;
     }
 
@@ -785,11 +1034,25 @@ public class SubscriptionService {
 
     private String loadLocalConfigJson(String name) {
         try {
-            File file = new File("/www/tvbox/" + name);
+            File file;
+            String folder;
+            if (name.startsWith("/")) {
+                file = new File("/www" + name);
+                folder = getFolder(name);
+            } else {
+                file = new File("/www/tvbox/" + name);
+                folder = "/tvbox/" + getFolder(name);
+            }
             if (file.exists()) {
                 log.info("load json from {}", file);
                 String json = FileUtils.readFileToString(file, StandardCharsets.UTF_8);
                 String address = readHostAddress();
+                String token = tokens.split(",")[0];
+                json = json.replace("./lib/tokenm.json", address + "/pg/lib/tokenm" + (StringUtils.isBlank(token) ? "" : "?token=" + token));
+                json = json.replace("./peizhi.json", address + "/zx/config" + (StringUtils.isBlank(token) ? "" : "?token=" + token));
+                json = json.replace("./json/peizhi.json", address + "/zx/config" + (StringUtils.isBlank(token) ? "" : "?token=" + token));
+                json = json.replace("./", address + folder);
+                //json = json.replace(address + folder + "lib/tokenm.json", "./lib/tokenm.json");
                 json = json.replace("DOCKER_ADDRESS", address);
                 json = json.replace("ATV_ADDRESS", address);
                 return json;
@@ -801,21 +1064,30 @@ public class SubscriptionService {
         return null;
     }
 
-    private String readHostAddress() {
+    private String getFolder(String path) {
+        int index = path.lastIndexOf("/");
+        if (index > 0) {
+            return path.substring(0, index + 1);
+        }
+        return "";
+    }
+
+    public String readHostAddress() {
         return readHostAddress("");
     }
 
-    private String readHostAddress(String path) {
+    public String readHostAddress(String path) {
         UriComponents uriComponents = ServletUriComponentsBuilder.fromCurrentRequest()
                 .scheme(appProperties.isEnableHttps() && !Utils.isLocalAddress() ? "https" : "http") // nginx https
                 .replacePath(path)
+                .replaceQuery(null)
                 .build();
         return uriComponents.toUriString();
     }
 
     private String readAListAddress() {
         Site site = siteRepository.findById(1).orElseThrow();
-        if ("http://localhost".equals(site.getUrl())) {
+        if (site.getUrl().startsWith("http://localhost")) {
             String port = appProperties.isHostmode() ? "5234" : environment.getProperty("ALIST_PORT", "5344");
             return ServletUriComponentsBuilder.fromCurrentRequest()
                     .port(port)
@@ -848,6 +1120,7 @@ public class SubscriptionService {
             Matcher matcher = pattern.matcher(content);
             if (matcher.find()) {
                 content = content.substring(content.indexOf(matcher.group()) + 10);
+                content = content.replace(" ", "");
                 content = new String(Base64.getDecoder().decode(content));
             }
 
@@ -876,6 +1149,7 @@ public class SubscriptionService {
             json = Pattern.compile("^\\s*#.*\r?\n?", Pattern.MULTILINE).matcher(json).replaceAll("");
             json = Pattern.compile("^\\s*//.*\r?\n?", Pattern.MULTILINE).matcher(json).replaceAll("");
             json = json.replace("\r", " ").replace("\n", " ");
+            json = json.replace("{Cloud-drive", "{\"Cloud-drive");
 
             return objectMapper.readValue(json, Map.class);
         } catch (Exception e) {
@@ -949,6 +1223,7 @@ public class SubscriptionService {
                 }
                 json = json.replace("DOCKER_ADDRESS/tvbox/my.json", baseUrl + id);
                 json = json.replace("ATV_ADDRESS", readHostAddress());
+                json = json.replace("TOKEN", StringUtils.isBlank(token) ? "-" : token);
                 return json;
             }
 

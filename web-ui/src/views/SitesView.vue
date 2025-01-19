@@ -1,6 +1,6 @@
 <template>
   <div class="sites">
-    <h1>站点列表</h1>
+    <h1>AList站点列表</h1>
     <el-row justify="end">
       <el-button @click="load">刷新</el-button>
       <el-button type="primary" @click="handleAdd">添加</el-button>
@@ -208,6 +208,15 @@
       </template>
     </el-dialog>
   </div>
+
+  <div class="divider"></div>
+
+  <EmbyView></EmbyView>
+
+  <div class="divider"></div>
+
+  <JellyfinView></JellyfinView>
+
 </template>
 
 <script setup lang="ts">
@@ -218,6 +227,8 @@ import type {UploadInstance, UploadProps, UploadRawFile} from 'element-plus'
 import {ElMessage, genFileId} from "element-plus";
 import type {VodList} from "@/model/VodList";
 import type {Meta} from "@/model/Meta";
+import EmbyView from "@/views/EmbyView.vue";
+import JellyfinView from "@/views/JellyfinView.vue";
 
 const upload = ref<UploadInstance>()
 const headers = {
@@ -458,7 +469,7 @@ const handleExceed: UploadProps['onExceed'] = (files: File[]) => {
 onMounted(() => {
   load()
   axios.get('/api/token').then(({data}) => {
-    token.value = data ? '/' + data : ''
+    token.value = data ? '/' + (data + '').split(',')[0] : ''
   })
 })
 </script>
@@ -466,6 +477,10 @@ onMounted(() => {
 <style scoped>
 .space {
   margin-bottom: 6px;
+}
+
+.divider {
+  margin: 30px 0;
 }
 
 .json pre {

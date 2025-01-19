@@ -1,10 +1,11 @@
-BASE_DIR=./data
+BASE_DIR=$PWD/data
 PORT1=4567
 PORT2=5344
 YES=false
+UPDATE=false
 MOUNT=""
 
-while getopts ":d:p:P:v:y" arg; do
+while getopts ":d:p:P:v:yu" arg; do
     case "${arg}" in
         d)
             BASE_DIR=${OPTARG}
@@ -20,6 +21,9 @@ while getopts ":d:p:P:v:y" arg; do
             ;;
         y)
             YES=true
+            ;;
+        u)
+            UPDATE=true
             ;;
         *)
             ;;
@@ -54,26 +58,36 @@ echo -e "\e[36m端口映射：\e[0m $PORT1:4567  $PORT2:5244"
 
 echo -e "\e[33m默认端口变更为4567\e[0m"
 
-docker image prune -f
+docker container prune -f --filter "label=MAINTAINER=Har01d"
+docker image prune -f --filter "label=MAINTAINER=Har01d"
+docker volume prune -f --filter "label=MAINTAINER=Har01d"
 
 platform="linux/amd64"
-tag="latest"
+TAG="latest"
 ARCH=$(uname -m)
 if [ "$ARCH" = "armv7l" ]; then
   platform="linux/arm/v7"
-  tag="arm-v7"
+  TAG="arm-v7"
 elif [ "$ARCH" = "aarch64" ]; then
     platform="linux/arm64"
 fi
 
+IMAGE_ID=$(docker images -q haroldli/xiaoya-tvbox:${TAG})
 echo -e "\e[32m下载最新Docker镜像，平台：${platform}\e[0m"
 for i in 1 2 3 4 5
 do
-   docker pull --platform ${platform} haroldli/alist-tvbox:${tag} && break
+   docker pull --platform ${platform} haroldli/alist-tvbox:${TAG} && break
 done
 
+NEW_IMAGE=$(docker images -q haroldli/xiaoya-tvbox:${TAG})
+if [ "$UPDATE" = "true" ] && [ "$IMAGE_ID" = "$NEW_IMAGE" ]; then
+  echo -e "\e[33m镜像没有更新\e[0m"
+  exit
+fi
+
+echo -e "\e[33m重启应用\e[0m"
 docker rm -f alist-tvbox && \
-docker run -d -p $PORT1:4567 -p $PORT2:5244 -e ALIST_PORT=$PORT2 -e INSTALL=new --restart=always -v "$BASE_DIR":/data ${MOUNT} --name=alist-tvbox haroldli/alist-tvbox:${tag}
+docker run -d -p $PORT1:4567 -p $PORT2:5244 -e ALIST_PORT=$PORT2 --restart=always -v "$BASE_DIR":/data ${MOUNT} --name=alist-tvbox haroldli/alist-tvbox:${TAG}
 
 echo -e "\n\e[32m请使用以下命令查看日志输出：\e[0m"
 echo -e "    docker logs -f alist-tvbox\n"
@@ -88,5 +102,3 @@ else
   echo -e "\e[32m云服务器请用公网IP访问\e[0m"
 fi
 echo ""
-
-echo -e "\e[33m默认端口变更为4567\e[0m"

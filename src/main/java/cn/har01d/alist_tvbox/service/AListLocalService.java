@@ -15,6 +15,7 @@ import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -61,8 +62,14 @@ public class AListLocalService {
         Utils.executeUpdate("INSERT INTO x_setting_items VALUES('open_api_client_secret','" + clientSecret + "','','string','',1,0);");
         String token = settingRepository.findById("token").map(Setting::getValue).orElse("");
         Utils.executeUpdate("UPDATE x_setting_items SET value = '" + StringUtils.isNotBlank(token) + "' WHERE key = 'sign_all'");
+        String code = settingRepository.findById("delete_code_115").map(Setting::getValue).orElse("");
+        Utils.executeUpdate("INSERT INTO x_setting_items VALUES('delete_code_115','" + code + "','','string','',1,0);");
         String time = settingRepository.findById("delete_delay_time").map(Setting::getValue).orElse("900");
         Utils.executeUpdate("INSERT INTO x_setting_items VALUES('delete_delay_time','" + time + "','','number','',1,0)");
+        String aliTo115 = settingRepository.findById("ali_to_115").map(Setting::getValue).orElse("false");
+        Utils.executeUpdate("INSERT INTO x_setting_items VALUES('ali_to_115','" + aliTo115 + "','','bool','',1,0)");
+//        String lazy = settingRepository.findById("ali_lazy_load").map(Setting::getValue).orElse("false");
+//        Utils.executeUpdate("INSERT INTO x_setting_items VALUES('ali_lazy_load','" + lazy + "','','bool','',1,0)");
     }
 
     public void updateSetting(String key, String value, String type) {
@@ -88,6 +95,16 @@ public class AListLocalService {
         }
     }
 
+    public SettingResponse getSetting(String key) {
+        HttpHeaders headers = new HttpHeaders();
+        Site site = siteRepository.findById(1).orElseThrow();
+        headers.add("Authorization", site.getToken());
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(null, headers);
+        String url = "/api/admin/setting/get?key=" + key;
+        ResponseEntity<SettingResponse> response = restTemplate.exchange(url, HttpMethod.GET, entity, SettingResponse.class);
+        return response.getBody();
+    }
+
     public void startAListServer() {
         if (aListStatus > 0) {
             return;
@@ -99,7 +116,12 @@ public class AListLocalService {
             File outFile = new File("/opt/atv/log/app.log");
             builder.redirectOutput(ProcessBuilder.Redirect.appendTo(outFile));
             builder.redirectError(ProcessBuilder.Redirect.appendTo(outFile));
-            builder.command("/opt/alist/alist", "server", "--no-prefix");
+            boolean debug = settingRepository.findById("alist_debug").map(Setting::getValue).orElse("").equals("true");
+            if (debug) {
+                builder.command("/opt/alist/alist", "server", "--no-prefix", "--debug");
+            } else {
+                builder.command("/opt/alist/alist", "server", "--no-prefix");
+            }
             builder.directory(new File("/opt/alist"));
             Process process = builder.start();
             settingRepository.save(new Setting(ALIST_RESTART_REQUIRED, "false"));

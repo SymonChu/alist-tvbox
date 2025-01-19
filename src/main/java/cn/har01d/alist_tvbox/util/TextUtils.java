@@ -46,6 +46,10 @@ public class TextUtils {
         return text.codePoints().allMatch(TextUtils::isAlphabetic);
     }
 
+    public static boolean isNumber(String text) {
+        return NUMBER1.matcher(text).matches();
+    }
+
     public static String fixName(String name) {
         int index = name.lastIndexOf('/');
         String newName = name.trim();
@@ -301,9 +305,11 @@ public class TextUtils {
                 .replace("动漫+真人", " ")
                 .replace("导演剪辑版", " ")
                 .replace("高码收藏版", " ")
+                .replace("高码", " ")
                 .replace("高清黑金珍藏版", " ")
                 .replace("高清修复版", " ")
                 .replace("重置版", " ")
+                .replace("洗版", " ")
                 .replace("特典映像", " ")
                 .replace("收藏版", " ")
                 .replace("「珍藏版」", " ")
@@ -400,6 +406,7 @@ public class TextUtils {
                 .replace("_", " ")
                 .replace("⭐", " ")
                 .replace("|", " ")
+                .replace("丨", "")
                 .replace("+", " ")
                 .replace("Ⅰ", "第一季")
                 .replace("Ⅱ", "第二季")

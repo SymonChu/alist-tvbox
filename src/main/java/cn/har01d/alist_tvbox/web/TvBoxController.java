@@ -3,7 +3,6 @@ package cn.har01d.alist_tvbox.web;
 import cn.har01d.alist_tvbox.dto.TokenDto;
 import cn.har01d.alist_tvbox.service.SubscriptionService;
 import cn.har01d.alist_tvbox.service.TvBoxService;
-import cn.har01d.alist_tvbox.util.Utils;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -15,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
-import java.net.URLDecoder;
 import java.util.List;
 import java.util.Map;
 
@@ -59,7 +57,6 @@ public class TvBoxController {
         subscriptionService.checkToken(token);
 
         String client = request.getHeader("X-CLIENT");
-        log.debug("{} {} {}", request.getMethod(), request.getRequestURI(), decodeUrl(request.getQueryString()));
         log.info("type: {}  path: {}  folder: {}  ac: {}  keyword: {}  filter: {}  sort: {}  page: {}", type, ids, t, ac, wd, f, sort, pg);
         if (ids != null && !ids.isEmpty()) {
             if (ids.startsWith("msearch:")) {
@@ -87,7 +84,7 @@ public class TvBoxController {
 
     @GetMapping("/api/token")
     public String getToken() {
-        return subscriptionService.getToken();
+        return subscriptionService.getTokens();
     }
 
     @PostMapping("/api/token")
@@ -124,9 +121,16 @@ public class TvBoxController {
         return subscriptionService.open();
     }
 
+    @GetMapping("/node/{token}/{file}")
+    public String node(@PathVariable String token, @PathVariable String file) throws IOException {
+        subscriptionService.checkToken(token);
+
+        return subscriptionService.node(file);
+    }
+
     @PostMapping("/api/cat/sync")
     public int syncCat() {
-        return Utils.execute("unzip -q -o /cat.zip -d /www/cat && cp -r /data/cat/* /www/cat/");
+        return subscriptionService.syncCat();
     }
 
     @GetMapping(value = "/repo/{id}", produces = "application/json")
@@ -139,17 +143,5 @@ public class TvBoxController {
         subscriptionService.checkToken(token);
 
         return subscriptionService.repository(token, id);
-    }
-
-    private String decodeUrl(String text) {
-        if (text == null || text.isEmpty()) {
-            return "";
-        }
-
-        try {
-            return URLDecoder.decode(text, "UTF-8");
-        } catch (Exception e) {
-            return text;
-        }
     }
 }

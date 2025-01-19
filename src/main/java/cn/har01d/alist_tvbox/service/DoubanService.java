@@ -206,10 +206,9 @@ public class DoubanService {
         return list.size();
     }
 
-    @Scheduled(cron = "0 0 22 * * ?")
+    @Scheduled(cron = "0 0 20,22 * * ?")
     public void update() {
-        Versions versions = new Versions();
-        getRemoteVersion(versions);
+        getRemoteVersion(new Versions());
     }
 
     public String getRemoteVersion(Versions versions) {
@@ -218,7 +217,7 @@ public class DoubanService {
         }
 
         try {
-            String remote = restTemplate.getForObject("http://data.har01d.cn/movie_version", String.class).trim();
+            String remote = restTemplate.getForObject("http://har01d.org/movie_version", String.class).trim();
             versions.setMovie(remote);
             String local = settingRepository.findById(MOVIE_VERSION).map(Setting::getValue).orElse("0.0").trim();
             String cached = getCachedVersion();
@@ -231,7 +230,7 @@ public class DoubanService {
             }
             return remote;
         } catch (Exception e) {
-            log.warn("", e);
+            log.debug("", e);
         }
         return "";
     }

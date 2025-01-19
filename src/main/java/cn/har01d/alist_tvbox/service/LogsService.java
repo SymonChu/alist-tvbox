@@ -2,28 +2,29 @@ package cn.har01d.alist_tvbox.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 @Slf4j
 @Service
-
 public class LogsService {
 
     private String fixLine(String text) {
@@ -46,22 +47,46 @@ public class LogsService {
         }
     }
 
-    public Page<String> getLogs(Pageable pageable, String type) throws IOException {
+    public Page<String> getLogs(Pageable pageable, String type, String level) throws IOException {
         Path file = getLogFile(type);
-        List<String> lines = Files.readAllLines(file);
         int size = pageable.getPageSize();
         int start = pageable.getPageNumber() * size;
         int end = start + size;
-        if (end > lines.size()) {
-            end = lines.size();
+
+        List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+        List<String> filtered = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
+            String[] parts = line.trim().split("\\s+");
+            if (!type.equals("app")) {
+                filtered.add(fixLine(line));
+            } else if (StringUtils.isBlank(level) || (parts.length > 7 && parts[3].equals("---") && parts[1].equals(level))) {
+                StringBuilder sb = new StringBuilder(fixLine(line));
+                sb.append("<pre>");
+                while (i + 1 < lines.size()) {
+                    String next = lines.get(i + 1);
+                    if (isLogLine(next)) {
+                        break;
+                    }
+                    sb.append(next).append("\n");
+                    i++;
+                }
+                sb.append("</pre>");
+                filtered.add(sb.toString().replace("<pre></pre>", ""));
+            }
         }
 
-        List<String> list = new ArrayList<>();
-        if (start < end) {
-            list = lines.subList(start, end).stream().map(this::fixLine).collect(Collectors.toList());
+        if (end > filtered.size()) {
+            end = filtered.size();
         }
 
-        return new PageImpl<>(list, pageable, lines.size());
+        List<String> result = filtered.subList(start, end);
+        return new PageImpl<>(result, pageable, filtered.size());
+    }
+
+    private boolean isLogLine(String line) {
+        String[] parts = line.trim().split("\\s+");
+        return parts.length > 7 && parts[3].equals("---") && (parts[1].equals("ERROR") || parts[1].equals("WARN") || parts[1].equals("INFO") || parts[1].equals("DEBUG"));
     }
 
     public FileSystemResource downloadLog() throws IOException {

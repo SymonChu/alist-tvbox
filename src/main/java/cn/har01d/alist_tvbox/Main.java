@@ -21,9 +21,13 @@ public class Main {
     public static void main(String[] args) throws IOException, ClassNotFoundException {
         Set<Class> classes = findAllClassesUsingClassLoader("cn.har01d.alist_tvbox.dto");
         classes.addAll(findAllClassesUsingClassLoader("cn.har01d.alist_tvbox.dto.bili"));
+        classes.addAll(findAllClassesUsingClassLoader("cn.har01d.alist_tvbox.dto.emby"));
+        classes.addAll(findAllClassesUsingClassLoader("cn.har01d.alist_tvbox.dto.tg"));
         classes.addAll(findAllClassesUsingClassLoader("cn.har01d.alist_tvbox.tvbox"));
         classes.addAll(findAllClassesUsingClassLoader("cn.har01d.alist_tvbox.domain"));
         classes.addAll(findAllClassesUsingClassLoader("cn.har01d.alist_tvbox.model"));
+        classes.addAll(findAllClassesUsingClassLoader("cn.har01d.alist_tvbox.live.model"));
+        //classes.addAll(findAllClassesUsingClassLoader("cn.har01d.alist_tvbox.play.model"));
         List<Map<String, Object>> result = new ArrayList<>();
         for (Class clazz : classes) {
             Map<String, Object> info = new HashMap<>();
@@ -42,6 +46,9 @@ public class Main {
         }
         addCollections(result);
         result.add(addCustom("com.github.benmanes.caffeine.cache.SSMS"));
+        result.add(addCustom("com.github.benmanes.caffeine.cache.SSMSA"));
+        result.add(addCustom("com.github.benmanes.caffeine.cache.SSSW"));
+        result.add(addCustom("com.github.benmanes.caffeine.cache.PSAMS"));
         ObjectMapper objectMapper = new ObjectMapper();
         String json = objectMapper.writeValueAsString(result);
         System.out.println("Working Directory = " + System.getProperty("user.dir"));
